@@ -2,16 +2,20 @@ import prisma from '../config/prisma.js';
 
 /**
  * Obtener todos los productos con filtros avanzados
- * GET /api/products?categoryId=1&minPrice=10000&maxPrice=50000&inStock=true
+ * GET /api/products?categoryId=1&minPrice=10000&maxPrice=50000&inStock=true&brandId=1
  */
 export const getAllProducts = async (req, res, next) => {
   try {
-    const { categoryId, minPrice, maxPrice, inStock } = req.query;
+    const { categoryId, minPrice, maxPrice, inStock, brandId } = req.query;
 
     const where = {};
 
     if (categoryId !== undefined) {
       where.categoryId = Number(categoryId);
+    }
+
+    if (brandId !== undefined) {
+      where.brandId = Number(brandId);
     }
 
     if (minPrice !== undefined || maxPrice !== undefined) {
@@ -29,6 +33,12 @@ export const getAllProducts = async (req, res, next) => {
       where,
       include: {
         category: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
+        brand: {
           select: {
             id: true,
             name: true
@@ -60,7 +70,9 @@ export const getProductById = async (req, res, next) => {
     const product = await prisma.product.findUnique({
       where: { id: productId },
       include: {
-        category: true
+        category: true,
+        brand: true,
+        reviews: true
       }
     });
 
@@ -80,7 +92,7 @@ export const getProductById = async (req, res, next) => {
  */
 export const createProduct = async (req, res, next) => {
   try {
-    const { name, description, price, stock, sku, isAvailable, categoryId } = req.body;
+    const { name, description, price, stock, sku, isAvailable, categoryId, brandId } = req.body;
 
     // 1. Verificar si la categoría existe antes de asociarla
     const categoryExists = await prisma.category.findUnique({
@@ -93,7 +105,20 @@ export const createProduct = async (req, res, next) => {
       });
     }
 
-    // 2. Crear el producto
+    // 2. Si se envía brandId, validar que exista
+    if (brandId) {
+      const brandExists = await prisma.brand.findUnique({
+        where: { id: brandId }
+      });
+
+      if (!brandExists) {
+        return res.status(404).json({
+          error: `La marca con ID ${brandId} no existe.`
+        });
+      }
+    }
+
+    // 3. Crear el producto
     const newProduct = await prisma.product.create({
       data: {
         name,
@@ -102,10 +127,12 @@ export const createProduct = async (req, res, next) => {
         stock,
         sku,
         isAvailable: isAvailable ?? true,
-        categoryId
+        categoryId,
+        brandId: brandId ? Number(brandId) : null
       },
       include: {
-        category: true
+        category: true,
+        brand: true
       }
     });
 
@@ -139,11 +166,24 @@ export const updateProduct = async (req, res, next) => {
       }
     }
 
+    // Si intenta cambiar de marca, validar que exista
+    if (updateData.brandId) {
+      const brandExists = await prisma.brand.findUnique({
+        where: { id: updateData.brandId }
+      });
+      if (!brandExists) {
+        return res.status(404).json({
+          error: `La marca con ID ${updateData.brandId} no existe.`
+        });
+      }
+    }
+
     const updatedProduct = await prisma.product.update({
       where: { id: productId },
       data: updateData,
       include: {
-        category: true
+        category: true,
+        brand: true
       }
     });
 
